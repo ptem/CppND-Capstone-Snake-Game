@@ -47,23 +47,41 @@ void Snake::UpdateBody(SDL_Point &current_head_cell, SDL_Point &prev_head_cell) 
   // Add previous head location to vector
   body.push_back(prev_head_cell);
 
-  if (!growing) {
-    // Remove the tail from the vector.
-    body.erase(body.begin());
-  } else {
+  if (growing) {
     growing = false;
     size++;
+  } else if (shrinking) {
+    shrinking = false;
+    
+    //If shrinking reduces the snake's total length (including head) to zero, it will die.
+    body.erase(body.begin());
+    alive = (body.size() == 0) ? false : true; 
+    
+    if (!alive) {
+      std::cout << "Snake Dead. Length: " << body.size() << " Alive: " << alive << "\n"; ;
+      return;
+    } 
+    std::cout << "Snake Lives On. Length: " << body.size() << " Alive: " << alive << "\n";
+    
+    // Move the back of the snake.
+    body.erase(body.begin());
+
+  } else {
+
+    body.erase(body.begin());
   }
 
   // Check if the snake has died.
   for (auto const &item : body) {
-    if (current_head_cell.x == item.x && current_head_cell.y == item.y) {
+    if ((current_head_cell.x == item.x && current_head_cell.y == item.y)) {
       alive = false;
     }
   }
 }
 
 void Snake::GrowBody() { growing = true; }
+
+void Snake::ShrinkBody() { shrinking = true; }
 
 // Inefficient method to check if cell is occupied by snake.
 bool Snake::SnakeCell(int x, int y) {
@@ -77,3 +95,4 @@ bool Snake::SnakeCell(int x, int y) {
   }
   return false;
 }
+

@@ -1,13 +1,20 @@
 #include "game.h"
 #include <iostream>
+#include <condition_variable>
 #include "SDL.h"
+#include <cmath>
+#include "map.h"
+
 
 Game::Game(std::size_t grid_width, std::size_t grid_height)
     : snake(grid_width, grid_height),
+      map(grid_width, grid_height, "../src/data/map.txt"),
       engine(dev()),
       random_w(0, static_cast<int>(grid_width - 1)),
       random_h(0, static_cast<int>(grid_height - 1)) {
+  
   PlaceFood();
+  PlaceFoodNew();
 }
 
 void Game::Run(Controller const &controller, Renderer &renderer,
@@ -25,7 +32,7 @@ void Game::Run(Controller const &controller, Renderer &renderer,
     // Input, Update, Render - the main game loop.
     controller.HandleInput(running, snake);
     Update();
-    renderer.Render(snake, food);
+    renderer.Render(snake, foodgrow, foodshrink, map.walls);
 
     frame_end = SDL_GetTicks();
 
@@ -51,18 +58,51 @@ void Game::Run(Controller const &controller, Renderer &renderer,
 }
 
 void Game::PlaceFood() {
+    int x, y;
+    while (true) {
+      x = random_w(engine);
+      y = random_h(engine);
+      // Check that the location is not occupied by a snake or other food item before placing food.
+      if (!snake.SnakeCell(x, y) && !SamePoint(foodshrink, x, y) && !CollidesWithMap(x, y)) {
+        foodgrow.x = x;
+        foodgrow.y = y;
+        break;
+    }
+    }
+}
+
+void Game::PlaceFoodNew() {
   int x, y;
   while (true) {
     x = random_w(engine);
     y = random_h(engine);
-    // Check that the location is not occupied by a snake item before placing
-    // food.
-    if (!snake.SnakeCell(x, y)) {
-      food.x = x;
-      food.y = y;
-      return;
+    // Check that the location is not occupied by a snake or other food item before placing food.
+    if (!snake.SnakeCell(x, y) && !SamePoint(foodgrow, x, y) && !CollidesWithMap(x, y)) {
+      foodshrink.x = x;
+      foodshrink.y = y;
+      break;
     }
   }
+}
+
+//Helper Function. Returns true if coordinates a(x,y) are equal to (x,y).
+bool Game::SamePoint(SDL_Point a, int x, int y) {
+  return (a.x == x && a.y == y); 
+}
+
+//Helper Function. Return true if two SDL_Points occupy the same coordinates.
+bool Game::SamePoint(SDL_Point a, SDL_Point b) {
+  return (a.x == b.x && a.y == b.y);
+}
+
+//Helper Function. Returns true if coordinates (x,y) collide with the map.
+bool Game::CollidesWithMap(int x, int y) {
+  for (SDL_Point wall : map.walls){
+    if (SamePoint(wall, x, y)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void Game::Update() {
@@ -74,14 +114,72 @@ void Game::Update() {
   int new_y = static_cast<int>(snake.head_y);
 
   // Check if there's food over here
-  if (food.x == new_x && food.y == new_y) {
+  if (SamePoint(foodgrow, new_x, new_y)) {
     score++;
     PlaceFood();
-    // Grow snake and increase speed.
-    snake.GrowBody();
-    snake.speed += 0.02;
+    snake.GrowBody(); // Grow + increase fall rate by a small amount.
+    wall_shift_timer_duration -= 0.1;
+  }
+
+  if (SamePoint(foodshrink, new_x, new_y)) {
+    score += 5;
+    number_of_shrink_food_eaten++;
+    PlaceFoodNew();
+    snake.ShrinkBody(); // Shrink + increase fall rate, more if more shrink food have been eaten.
+    wall_shift_timer_duration -= 0.1 * number_of_shrink_food_eaten;
+  }
+
+  if (CollidesWithMap(new_x, new_y)) {
+    snake.alive = false;
+  }
+  
+  if (!is_wall_shift_active) {
+    if(shifted_y == 0) {
+      map.ShiftWalls(1, 0);
+      shifted_x++;
+    } else {
+      map.ShiftWalls(0, 1);
+      shifted_y = 0;
+    }
+    PlaceFoodNew();
+    is_wall_shift_active = true;
+    wall_shift_thread = std::thread(&Game::WallShiftTimer, this);
+    wall_shift_thread.detach();
+    already_shifted = true;
+  }
+} 
+
+
+
+void Game::WallShiftTimer() {
+  auto start_time = std::chrono::high_resolution_clock::now();
+  
+  std::unique_lock<std::mutex> lock(shift_mutex);
+  
+  while(is_wall_shift_active) {
+    lock.unlock();
+
+
+
+    auto current_time = std::chrono::high_resolution_clock::now();
+    auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time).count();
+    if (elapsed_seconds >= wall_shift_timer_duration) {
+    	  //Time to shift the walls.
+        if (shifted_x == 5) {
+          shifted_y = 1;
+          shifted_x = 0;
+        }
+      	is_wall_shift_active = false;
+        break;
+    }
+
+    lock.lock();
+    
+    //Dont check again for a bit
+    con_var.wait_for(lock, std::chrono::milliseconds(int(std::floor(wall_shift_timer_duration * 1000 * 0.5))));
   }
 }
 
 int Game::GetScore() const { return score; }
 int Game::GetSize() const { return snake.size; }
+
