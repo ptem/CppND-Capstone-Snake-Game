@@ -55,11 +55,9 @@ This is a repo for the Capstone project in the [Udacity C++ Nanodegree Program](
 - Project uses move semantics to move data instead of copying where possible (Used in map.cpp to move and read lines when generating map data. All other functions in map.cpp act on the member data of the class itself, so do not use this approach).
 
 ### Concurrency
-- Project uses multithreading.
- - A timer thread exists in game.cpp and upon its expiration the walls will shift vertically. After enough vertical movements, the walls will also shift horizontally.
+- Project uses multithreading -- a timer thread exists in game.cpp and upon its expiration the walls will shift vertically. After enough vertical movements, the walls will also shift horizontally.
 - A mutex or lock is used to protect data shared across threads in the code.
-- A condition variable is used in the project to synchronize thread execution.
- - A condition variable is used to avoid needless computation in the timer thread.
+- A condition variable is used in the project to synchronize thread execution -- A condition variable is used to avoid needless computation in the timer thread.
 
 
 ## CC Attribution-ShareAlike 4.0 International
